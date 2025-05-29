@@ -1,6 +1,143 @@
+<!DOCTYPE html>
+<html lang="ja">
 <head>
   <meta charset="utf-8">
+  <!-- スマホ表示に必須のビューポート設定 -->
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- 検索エンジンにインデックスさせない -->
   <meta name="robots" content="noindex, nofollow">
-  <title>AR 体験モデル</title>
-  …
+  <title>紙製ARゴーグル体験</title>
+
+  <!-- model‑viewer ライブラリ（Google 提供、46 KB ほど）-->
+  <script type="module" src="https://unpkg.com/@google/model-viewer/dist/model-viewer.min.js"></script>
+
+  <style>
+    /* 画面全体の基本スタイル */
+    body {
+      margin: 0;
+      font-family: system-ui, sans-serif;
+      background: #fafafa;
+      color: #222;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+    }
+    header {
+      padding: 1rem 0.5rem;
+      text-align: center;
+    }
+    h1 {
+      margin: 0.2em 0 0.4em;
+      font-size: 1.6rem;
+    }
+    #viewerContainer {
+      width: 100%;
+      max-width: 800px;
+      padding: 0 0.5rem;
+      box-sizing: border-box;
+    }
+    model-viewer {
+      width: 100%;
+      height: 70vh; /* 画面高の 70 % */
+      background: #eaeaea;
+      border-radius: 12px;
+    }
+    #selector {
+      display: block;
+      width: 100%;
+      margin: 0.6rem auto 0;
+      padding: 0.4rem;
+      font-size: 1rem;
+    }
+    #ar-button {
+      position: absolute;
+      bottom: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 0.6rem 1.2rem;
+      font-size: 1rem;
+      border: none;
+      border-radius: 9999px;
+      background: #1485f4; /* Google ブルー風 */
+      color: #fff;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.25);
+      cursor: pointer;
+    }
+    #ar-button:active {
+      transform: translate(-50%, 2px);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    }
+    footer {
+      font-size: 0.8rem;
+      color: #666;
+      padding: 0.8rem 1rem 2rem;
+      text-align: center;
+    }
+  </style>
 </head>
+<body>
+  <header>
+    <h1>紙製ARゴーグル体験</h1>
+    <p>モデルを選んで <strong>AR</strong> ボタンをタップしてください。</p>
+  </header>
+
+  <div id="viewerContainer">
+    <!-- 3D / AR ビューア本体 -->
+    <model-viewer id="arViewer"
+      src="model1.glb"            /* ▲デフォルトの glb ファイル名を置き換えてください */
+      ios-src="model1.usdz"       /* ▲対応する usdz ファイル名を置き換えてください */
+      ar
+      ar-modes="webxr scene-viewer quick-look"
+      camera-controls
+      tone-mapping="neutral"
+      poster="poster.webp"        /* 読み込み待ちに表示する画像（省略可） */
+      shadow-intensity="1">
+      <!-- AR 非対応端末ではこのボタンは自動で非表示になります -->
+      <button slot="ar-button" id="ar-button">👓 AR で見る</button>
+      <!-- AR 起動に失敗した場合のフォールバックメッセージ -->
+      <div id="ar-fail" slot="ar-failure">
+        お使いの端末では AR が利用できません。3D 表示のみご覧いただけます。
+      </div>
+      <!-- JavaScript 無効時の警告 -->
+      <noscript>JavaScript を有効にすると 3D モデルが表示されます。</noscript>
+    </model-viewer>
+
+    <!-- モデル選択セレクター（必要なければ削除） -->
+    <select id="selector">
+      <option value="model1" data-glb="model1.glb" data-usdz="model1.usdz">モデル 1</option>
+      <option value="model2" data-glb="model2.glb" data-usdz="model2.usdz">モデル 2</option>
+      <option value="model3" data-glb="model3.glb" data-usdz="model3.usdz">モデル 3</option>
+    </select>
+  </div>
+
+  <footer>
+    <p>ファイルサイズ節約のため、3D モデルは解像度を最適化しています。</p>
+    <p>© 2025 Your Organization / CC BY 4.0</p>
+  </footer>
+
+  <script>
+    /* =======================
+       ▼ モデル切り替え処理 ▼
+       ======================= */
+    const viewer   = document.getElementById('arViewer');
+    const selector = document.getElementById('selector');
+
+    selector.addEventListener('change', () => {
+      const opt = selector.selectedOptions[0];
+      viewer.src    = opt.dataset.glb;
+      viewer.iosSrc = opt.dataset.usdz;
+    });
+
+    /* Gmail アプリ／Outlook アプリから開いた場合のヒント */
+    window.addEventListener('DOMContentLoaded', () => {
+      const ua = navigator.userAgent;
+      if (/Gmail\/|Outlook-iOS/.test(ua)) {
+        alert('メールアプリでモデルが開けない場合は、右上の「…」から Safari で開き直してください。');
+      }
+    });
+  </script>
+
+  <!-- robots.txt を GitHub Pages に公開する場合は、この HTML と同じ階層に robots.txt を置いてください -->
+</body>
+</html>
