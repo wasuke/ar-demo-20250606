@@ -125,8 +125,9 @@
 
     selector.addEventListener('change', () => {
       const opt = selector.selectedOptions[0];
-      viewer.src    = opt.dataset.glb;
-      viewer.iosSrc = opt.dataset.usdz;
+      const ver = Date.now();               // 例：Unix タイムスタンプ
+      viewer.src    = `${opt.dataset.glb}?v=${ver}`;
+      viewer.iosSrc = `${opt.dataset.usdz}?v=${ver}`;
     });
 
     /* Gmail アプリ／Outlook アプリから開いた場合のヒント */
