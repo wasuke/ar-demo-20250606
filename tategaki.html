@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>縦書きテキストエディタ（改良版：カーソル/削除キー対応 & 正確な表示領域）</title>
+  <style>
+    /* ---------- 全体レイアウト ---------- */
+    body {
+      margin: 0;
+      padding: 0;
+      display: flex;
+      height: 100vh;
+      font-family: "ヒラギノ角ゴ Pro W3", "メイリオ", sans-serif;
+      overflow: hidden;
+    }
+    /* サイドバー */
+    .sidebar {
+      width: 280px;
+      background-color: #f7f7f7;
+      border-right: 1px solid #ccc;
+      box-sizing: border-box;
+      padding: 20px;
+    }
+    .sidebar h2 {
+      margin-top: 0;
+      font-size: 18px;
+    }
+    .field-group {
+      margin-bottom: 20px;
+    }
+    .field-group label {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 14px;
+    }
+    .field-group input[type="number"] {
+      width: calc(100% - 70px);
+      padding: 4px 6px;
+      font-size: 14px;
+      box-sizing: border-box;
+      margin-right: 4px;
+    }
+    .field-group .apply-btn {
+      padding: 4px 8px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .field-group .current-values {
+      margin-top: 8px;
+      font-size: 13px;
+      color: #555;
+    }
+    .field-group .current-values span {
+      font-weight: bold;
+    }
+    /* エディタコンテナ */
+    .editor-container {
+      flex: 1;
+      position: relative;
+      background-color: #fff;
+      overflow-x: auto;  /* 横スクロールで複数列を閲覧 */
+      overflow-y: hidden;
+      padding: 10px;
+      box-sizing: border-box;
+    }
+    /* 縦書きエディタ本体 */
+    .editor {
+      display: inline-block;
+      padding: 0; /* paddingを削除して表示領域を正確に */
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      background-color: #fff;
+      box-sizing: content-box; /* content-box にして height:38em がコンテンツ領域 */
+      /* 縦書き表示 */
+      writing-mode: vertical-rl;
+      text-orientation: upright;
+      /* 縦1文字あたりを 1em に揃え、行間をなくす */
+      font-size: 16px;
+      line-height: 1em;
+      /* 改行は手動で行うため、プリフォーマット */
+      white-space: pre;
+      /* 縦スクロール不要。横スクロールのみ可 */
+      overflow-y: hidden;
+      overflow-x: visible;
+      /* フォーカス時のアウトラインを消す */
+      outline: none;
+      caret-color: black; /* キャレットの色指定 */
+    }
+    /* プレースホルダー */
+    .editor:empty::before {
+      content: attr(data-placeholder);
+      color: #aaa;
+      writing-mode: vertical-rl;
+      text-orientation: upright;
+      pointer-events: none;
+    }
+    /* 回転させたい記号用のクラス */
+    .rot90 {
+      display: inline-block;
+      transform: rotate(90deg);
+      line-height: 1em;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 左側：ツールエリア -->
+  <div class="sidebar">
+    <h2>設定パネル</h2>
+
+    <div class="field-group">
+      <label for="charsPerColumn">縦文字数（1列あたり）：</label>
+      <input type="number" id="charsPerColumn" min="1" value="38" />
+      <button class="apply-btn" id="applyChars">適用</button>
+      <div class="current-values">
+        現在：<span id="currentChars">38</span> 文字/列
+      </div>
+    </div>
+
+    <div class="field-group">
+      <label for="colsPerPage">行数（ページあたり列数）：</label>
+      <input type="number" id="colsPerPage" min="1" value="40" />
+      <button class="apply-btn" id="applyCols">適用</button>
+      <div class="current-values">
+        現在：<span id="currentCols">40</span> 列/ページ
+      </div>
+    </div>
+
+    <button id="btnSave" style="padding:6px 12px; font-size:14px; margin-top:10px;">
+      内容を保存
+    </button>
+  </div>
+
+  <!-- 右側：縦書きエディタ -->
+  <div class="editor-container">
+    <div
+      id="editor"
+      class="editor"
+      contenteditable="true"
+      data-placeholder="ここに縦書きで入力できます"
+    ></div>
+  </div>
+
+  <script>
+    (function () {
+      const editor = document.getElementById("editor");
+      const charsInput = document.getElementById("charsPerColumn");
+      const colsInput = document.getElementById("colsPerPage");
+      const currentChars = document.getElementById("currentChars");
+      const currentCols = document.getElementById("currentCols");
+      const applyCharsBtn = document.getElementById("applyChars");
+      const applyColsBtn = document.getElementById("applyCols");
+      const btnSave = document.getElementById("btnSave");
+
+      // ======== グローバル設定値 ========
+      let charsPerColumn = 38;  // 初期縦文字数
+      let colsPerPage = 40;     // 初期列数
+      let isWrapping = false;
+
+      // ======== 回転させたい句読点・記号のセット ========
+      const ROTATION_SET = new Set([
+        "。", "、", "．", "，", "：", "；",
+        "？", "！", "(", ")", "（", "）",
+        "[", "]", "［", "］", "{", "}", "｛", "｝",
+        "<", ">", "〈", "〉", "《", "》", "「", "」", "『", "』",
+        "―", "…", "–", "—", "“", "”", "‘", "’", "％", "＄", "＃", "＠", "＆"
+      ]);
+
+      // ======== エディタ高さを文字数に合わせて設定 ========
+      function updateEditorHeight() {
+        // content-box なので padding, border は含まれないコンテンツ領域を charsPerColumn * 1em に
+        editor.style.height = charsPerColumn + "em";
+      }
+
+      // ======== HTMLエスケープ ========
+      function escapeHtml(ch) {
+        const map = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+        return ch.replace(/[&<>"']/g, (m) => map[m]);
+      }
+
+      // ======== DOMから正確な生テキストを取り出す ========
+      //   <br> は出力せず、span.rot90内の文字やテキストノードをそのまま連結。
+      //   ユーザーの手動改行("\n") だけが生テキストに含まれる。
+      function getRawFromDOM() {
+        let raw = "";
+        function dfs(node) {
+          if (node.nodeType === Node.TEXT_NODE) {
+            raw += node.nodeValue;
+          } else if (node.nodeType === Node.ELEMENT_NODE) {
+            if (node.tagName === "BR") {
+              // <br> はフォーマット用なので含めない
+              return;
+            }
+            if (node.tagName === "SPAN" && node.classList.contains("rot90")) {
+              // 回転span内の文字を1文字とする
+              raw += node.textContent;
+            } else {
+              for (let i = 0; i < node.childNodes.length; i++) {
+                dfs(node.childNodes[i]);
+              }
+            }
+          }
+        }
+        dfs(editor);
+        return raw;
+      }
+
+      // ======== テキストを再構築（自動改行 & 空行挿入 & 記号回転） ========
+      function rewrapContentFromRaw(raw, maintainCursorIndex = null) {
+        if (isWrapping) return;
+        isWrapping = true;
+
+        let html = "";
+        let rawIdx = 0;
+        for (let i = 0; i < raw.length; i++) {
+          const ch = raw[i];
+          // ユーザー手動改行="\n" の場合
+          if (ch === "\n") {
+            html += "<br>";
+            rawIdx++;
+            continue;
+          }
+          // 回転すべき記号
+          if (ROTATION_SET.has(ch)) {
+            html += `<span class="rot90">${escapeHtml(ch)}</span>`;
+          } else {
+            html += escapeHtml(ch);
+          }
+          rawIdx++;
+          // １列あたりの文字数で強制改行
+          if (rawIdx % charsPerColumn === 0) {
+            html += "<br>";
+          }
+          // １ページあたりの総文字数で空行（空列）を挿入
+          if (rawIdx % (charsPerColumn * colsPerPage) === 0) {
+            html += "<br>";
+          }
+        }
+
+        editor.innerHTML = html;
+
+        // カーソル位置を復元
+        if (maintainCursorIndex !== null) {
+          placeCaretAtPosition(maintainCursorIndex);
+        } else {
+          placeCaretAtPosition(raw.length);
+        }
+
+        isWrapping = false;
+      }
+
+      // ======== カーソル位置制御 ========
+      // 生テキスト(raw)におけるカーソルの文字インデックスを求める
+      function getCurrentRawCursorIndex(includeNewlinesRaw) {
+        const sel = window.getSelection();
+        if (!sel.rangeCount) return includeNewlinesRaw.length;
+        const range = sel.getRangeAt(0);
+        let idx = 0;
+        let found = false;
+
+        function dfs(node) {
+          if (found) return;
+          if (node.nodeType === Node.TEXT_NODE) {
+            const text = node.nodeValue;
+            if (node === range.startContainer) {
+              idx += range.startOffset;
+              found = true;
+              return;
+            } else {
+              idx += text.length;
+            }
+          } else if (node.nodeType === Node.ELEMENT_NODE) {
+            if (node.tagName === "SPAN" && node.classList.contains("rot90")) {
+              if (node.contains(range.startContainer)) {
+                idx += range.startOffset > 0 ? 1 : 0;
+                found = true;
+                return;
+              } else {
+                idx += 1;
+              }
+            } else if (node.tagName === "BR") {
+              // <br> は raw 上では '\n' として1文字分
+              idx += 1;
+            } else {
+              for (let i = 0; i < node.childNodes.length; i++) {
+                dfs(node.childNodes[i]);
+                if (found) return;
+              }
+            }
+          }
+        }
+
+        for (let i = 0; i < editor.childNodes.length; i++) {
+          dfs(editor.childNodes[i]);
+          if (found) break;
+        }
+        return Math.min(idx, includeNewlinesRaw.length);
+      }
+
+      // 生テキスト rawIndex にカーソルを移動
+      function placeCaretAtPosition(rawIndex) {
+        let idx = 0;
+        let targetNode = null;
+        let targetOffset = 0;
+
+        function dfs(node) {
+          if (targetNode) return;
+          if (node.nodeType === Node.TEXT_NODE) {
+            const text = node.nodeValue;
+            if (idx + text.length >= rawIndex) {
+              targetNode = node;
+              targetOffset = rawIndex - idx;
+              return;
+            } else {
+              idx += text.length;
+            }
+          } else if (node.nodeType === Node.ELEMENT_NODE) {
+            if (node.tagName === "SPAN" && node.classList.contains("rot90")) {
+              if (idx + 1 >= rawIndex) {
+                targetNode = node.firstChild;
+                targetOffset = rawIndex - idx;
+                return;
+              } else {
+                idx += 1;
+              }
+            } else if (node.tagName === "BR") {
+              // <br> は raw 上の '\n' として1文字分
+              if (idx + 1 >= rawIndex) {
+                const range = document.createRange();
+                range.setStartBefore(node);
+                range.collapse(true);
+                const sel = window.getSelection();
+                sel.removeAllRanges();
+                sel.addRange(range);
+                targetNode = true; // ダミー
+                return;
+              } else {
+                idx += 1;
+              }
+            } else {
+              for (let i = 0; i < node.childNodes.length; i++) {
+                dfs(node.childNodes[i]);
+                if (targetNode) return;
+              }
+            }
+          }
+        }
+
+        for (let i = 0; i < editor.childNodes.length; i++) {
+          dfs(editor.childNodes[i]);
+          if (targetNode) break;
+        }
+
+        const sel = window.getSelection();
+        const range = document.createRange();
+        if (targetNode && targetNode !== true) {
+          range.setStart(targetNode, targetOffset);
+        } else {
+          range.selectNodeContents(editor);
+          range.collapse(false);
+        }
+        sel.removeAllRanges();
+        sel.addRange(range);
+      }
+
+      // ======== キー操作制御：カーソルキー & Enter & Backspace & Delete ========
+      editor.addEventListener("keydown", (ev) => {
+        const sel = window.getSelection();
+        if (!sel.rangeCount) return;
+        const key = ev.key;
+
+        // ↓キー：次の文字
+        if (key === "ArrowDown") {
+          ev.preventDefault();
+          sel.modify("move", "forward", "character");
+          return;
+        }
+        // ↑キー：前の文字
+        if (key === "ArrowUp") {
+          ev.preventDefault();
+          sel.modify("move", "backward", "character");
+          return;
+        }
+        // →キー：次の行（列）
+        if (key === "ArrowRight") {
+          ev.preventDefault();
+          sel.modify("move", "forward", "line");
+          return;
+        }
+        // ←キー：前の行（列）
+        if (key === "ArrowLeft") {
+          ev.preventDefault();
+          sel.modify("move", "backward", "line");
+          return;
+        }
+        // Enterキー：その列の末尾まで改行を挿入して次の列へ
+        if (key === "Enter") {
+          ev.preventDefault();
+          let raw = getRawFromDOM();
+          const cursorIdx = getCurrentRawCursorIndex(raw);
+          const offsetInColumn = cursorIdx % charsPerColumn;
+          const toNextColumn = charsPerColumn - offsetInColumn;
+          const newRaw = raw.slice(0, cursorIdx) + "\n".repeat(toNextColumn) + raw.slice(cursorIdx);
+          // 再描画、カーソル位置を cursorIdx + toNextColumn にセット
+          rewrapContentFromRaw(newRaw, cursorIdx + toNextColumn);
+          return;
+        }
+        // Backspaceキー：前の文字を削除
+        if (key === "Backspace") {
+          ev.preventDefault();
+          let raw = getRawFromDOM();
+          const cursorIdx = getCurrentRawCursorIndex(raw);
+          if (cursorIdx > 0) {
+            const newRaw = raw.slice(0, cursorIdx - 1) + raw.slice(cursorIdx);
+            rewrapContentFromRaw(newRaw, cursorIdx - 1);
+          }
+          return;
+        }
+        // Deleteキー：次の文字を削除
+        if (key === "Delete") {
+          ev.preventDefault();
+          let raw = getRawFromDOM();
+          const cursorIdx = getCurrentRawCursorIndex(raw);
+          if (cursorIdx < raw.length) {
+            const newRaw = raw.slice(0, cursorIdx) + raw.slice(cursorIdx + 1);
+            rewrapContentFromRaw(newRaw, cursorIdx);
+          }
+          return;
+        }
+        // その他は通常入力を通す
+      });
+
+      // ======== 設定適用処理 ========
+      function applyCharsSetting() {
+        const newChars = parseInt(charsInput.value, 10);
+        if (!isNaN(newChars) && newChars > 0) {
+          charsPerColumn = newChars;
+          currentChars.textContent = charsPerColumn;
+          updateEditorHeight();
+          const raw = getRawFromDOM();
+          const cursorIdx = getCurrentRawCursorIndex(raw);
+          rewrapContentFromRaw(raw, cursorIdx);
+        } else {
+          charsInput.value = charsPerColumn;
+        }
+      }
+      function applyColsSetting() {
+        const newCols = parseInt(colsInput.value, 10);
+        if (!isNaN(newCols) && newCols > 0) {
+          colsPerPage = newCols;
+          currentCols.textContent = colsPerPage;
+          const raw = getRawFromDOM();
+          const cursorIdx = getCurrentRawCursorIndex(raw);
+          rewrapContentFromRaw(raw, cursorIdx);
+        } else {
+          colsInput.value = colsPerPage;
+        }
+      }
+
+      // ======== ボタン・イベントバインド ========
+      applyCharsBtn.addEventListener("click", applyCharsSetting);
+      applyColsBtn.addEventListener("click", applyColsSetting);
+      btnSave.addEventListener("click", () => {
+        // 保存時：生テキストを取得して \n を含めたままダウンロード
+        const textContent = getRawFromDOM().replace(/\u00A0/g, " ");
+        const blob = new Blob([textContent], { type: "text/plain" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "vertical_text.txt";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      });
+
+      // ======== 初期化 ========
+      updateEditorHeight();
+      // 初回レンダリング（空状態でも整形をかける）
+      rewrapContentFromRaw("", 0);
+      // 読み込み完了後、カーソルを先頭に
+      document.addEventListener("DOMContentLoaded", () => {
+        placeCaretAtPosition(0);
+      });
+      // テキスト入力があるたびに再描画
+      editor.addEventListener("input", () => {
+        // 入力イベントは挿入文字が反映された後に発火するので、
+        // getRawFromDOM() で正確な raw を取得し再描画
+        const raw = getRawFromDOM();
+        const cursorIdx = getCurrentRawCursorIndex(raw);
+        rewrapContentFromRaw(raw, cursorIdx);
+      });
+    })();
+  </script>
+</body>
+</html>
