@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <!-- 検索エンジンにインデックスさせない -->
   <meta name="robots" content="noindex, nofollow">
-  <title>イイアス春日井 ARゴーグル体験</title>
+  <title>紙製ARゴーグル体験</title>
 
   <!-- model‑viewer ライブラリ（Google 提供、46 KB ほど）-->
   <script type="module" src="https://unpkg.com/@google/model-viewer/dist/model-viewer.min.js"></script>
@@ -50,6 +50,17 @@
       padding: 0.4rem;
       font-size: 1rem;
     }
+    #androidNotice {
+      display: none;
+      margin: 0.8rem auto;
+      padding: 0.8rem 1rem;
+      background: #fff3cd;
+      color: #856404;
+      border: 1px solid #ffeeba;
+      border-radius: 6px;
+      font-size: 0.95rem;
+      max-width: 800px;
+    }
     #ar-button {
       position: absolute;
       bottom: 16px;
@@ -81,6 +92,20 @@
     <h1>紙製ARゴーグル体験</h1>
     <p>モデルを選んで <strong>AR</strong> ボタンをタップしてください。</p>
   </header>
+
+  <!-- ▼ Android 端末専用の注意書き（JS で表示制御） -->
+    <div id="androidNotice">
+    <strong>Android ご利用の皆さまへ</strong><br>
+    AR ボタンを押した際に <em>「開発用アプリをインストールしてください」</em> と表示された場合は、
+    <em>Google Play 開発者サービス for AR</em>（Google Play Services for AR）の
+    インストールまたは更新が必要です。<br>
+    <br>
+    <u>Sony Xperia 端末で「非対応端末」と表示される場合</u> は、まず
+    <strong>設定 › システム › ソフトウェアアップデート</strong> から
+    Android を最新バージョンにアップデートして再試行してください。<br>
+    それでも改善しない場合は、お使いの機種が ARCore 非対応の可能性があります。
+    その際は <span style="white-space:nowrap;">3D 表示モード</span> でお楽しみください。
+  </div>
 
   <div id="viewerContainer">
     <!-- 3D / AR ビューア本体 -->
@@ -125,14 +150,18 @@
 
     selector.addEventListener('change', () => {
       const opt = selector.selectedOptions[0];
-      const ver = Date.now();               // 例：Unix タイムスタンプ
-      viewer.src    = `${opt.dataset.glb}?v=${ver}`;
-      viewer.iosSrc = `${opt.dataset.usdz}?v=${ver}`;
+      viewer.src    = opt.dataset.glb;
+      viewer.iosSrc = opt.dataset.usdz;
     });
 
     /* Gmail アプリ／Outlook アプリから開いた場合のヒント */
     window.addEventListener('DOMContentLoaded', () => {
       const ua = navigator.userAgent;
+      // Android 端末チェック
+      if (/Android/i.test(ua)) {
+        document.getElementById('androidNotice').style.display = 'block';
+      }
+
       if (/Gmail\/|Outlook-iOS/.test(ua)) {
         alert('メールアプリでモデルが開けない場合は、右上の「…」から Safari で開き直してください。');
       }
