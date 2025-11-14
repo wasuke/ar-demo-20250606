@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>VoiceVox 実験</title>
+</head>
+<body>
+<h1>VoiceVox 音声合成</h1>
+<p>下に文章を入力して「喋る」を押すと、VoiceVoxが話します。</p>
+
+<textarea id="text" rows="4" cols="50">
+  こんにちは、ボイスボックスです。
+</textarea><br>
+<label>話者番号：</label>
+<input type="number" id="speaker" value="1" min="1" max="50">
+<button id="speak">喋る</button>
+
+<script>
+document.getElementById("speak").onclick = async () => {
+  const text = document.getElementById("text").value;
+  const speaker = document.getElementById("speaker").value;
+
+  const query = await fetch(
+    `http://127.0.0.1:50021/audio_query?text=
+    ${encodeURIComponent(text)}&speaker=${speaker}`,
+    { method: "POST" }
+  );
+  const queryJson = await query.json();
+
+  const audio = await fetch(
+    `http://127.0.0.1:50021/synthesis?speaker=${speaker}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(queryJson)
+    }
+  );
+
+  const blob = await audio.blob();
+  const url = URL.createObjectURL(blob);
+  new Audio(url).play();
+};
+</script>
+</body>
+</html>
